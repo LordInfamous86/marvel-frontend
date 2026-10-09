@@ -1,0 +1,45 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "DM Sans", Inter, system-ui, sans-serif;
+  --font-mono: "DM Mono", "Courier New", monospace;
+  --color-ink: #111110;
+  --color-panel: #191817;
+  --color-line: #302e2c;
+  --color-paper: #f3f0ec;
+  --color-muted: #96918a;
+  --color-marvel: #ef4b41;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    min-width: 320px;
+    min-height: 100vh;
+    margin: 0;
+    background: #111110;
+    color: #f3f0ec;
+    font-family: "DM Sans", Inter, system-ui, sans-serif;
+  }
+
+  button,
+  input {
+    font: inherit;
+  }
+
+  button:focus-visible,
+  input:focus-visible,
+  a:focus-visible {
+    outline: 2px solid #ef4b41;
+    outline-offset: 3px;
+  }
+
+  ::selection {
+    color: white;
+    background: #a82723;
+  }
+}
