@@ -34,7 +34,7 @@ function ImageOrPlaceholder({ character, large = false }) {
   )
 }
 
-function CharacterCard({ character, onSelect }) {
+function CharacterCard({ character, onSelect, onEdit }) {
   return (
     <article className="grid min-h-[210px] grid-cols-[118px_1fr] overflow-hidden border border-line bg-gradient-to-br from-panel to-[#151514] transition hover:-translate-y-0.5 hover:border-[#6c3531] sm:grid-cols-[154px_1fr]">
       <ImageOrPlaceholder character={character} />
@@ -46,13 +46,23 @@ function CharacterCard({ character, onSelect }) {
         </p>
         <div className="mt-auto flex w-full items-center justify-between gap-2 border-t border-line pt-2.5">
           <span className="text-[10px] text-paper/90">{character.comicsAvailable ?? 0} comics</span>
-          <button
-            className="shrink-0 font-mono text-[8px] font-bold tracking-[.1em] text-marvel hover:text-[#ff756b]"
-            type="button"
-            onClick={() => onSelect(character)}
-          >
-            VIEW PROFILE <span className="ml-1 text-sm">↗</span>
-          </button>
+          <div className="flex shrink-0 items-center gap-3">
+            <button
+              className="font-mono text-[8px] font-bold tracking-[.1em] text-muted hover:text-paper"
+              type="button"
+              onClick={() => onEdit(character)}
+              aria-label={`Edit ${character.name}`}
+            >
+              EDIT
+            </button>
+            <button
+              className="font-mono text-[8px] font-bold tracking-[.1em] text-marvel hover:text-[#ff756b]"
+              type="button"
+              onClick={() => onSelect(character)}
+            >
+              VIEW PROFILE <span className="ml-1 text-sm">↗</span>
+            </button>
+          </div>
         </div>
       </div>
     </article>
@@ -149,11 +159,175 @@ function CharacterDetail({ character, onClose }) {
   )
 }
 
+function CharacterEditor({ character, onClose, onSaved }) {
+  const isEditing = Boolean(character)
+  const [form, setForm] = useState({
+    id: character?.id ?? '',
+    name: character?.name ?? '',
+    description: character?.description ?? '',
+    imageUrl: character?.imageUrl ?? '',
+    comicsAvailable: character?.comicsAvailable ?? 0
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+    setSaving(true)
+    setError('')
+
+    const payload = {
+      name: form.name.trim(),
+      description: form.description.trim(),
+      imageUrl: form.imageUrl.trim(),
+      comicsAvailable: Number(form.comicsAvailable)
+    }
+    if (!isEditing) payload.id = Number(form.id)
+
+    try {
+      const response = await fetch(
+        isEditing ? `${API_ENDPOINT}/${character.id}` : API_ENDPOINT,
+        {
+          method: isEditing ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }
+      )
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(result.details?.join(' ') || result.error || 'The character could not be saved.')
+      }
+      onSaved(result)
+    } catch (requestError) {
+      setError(requestError.message || 'Could not reach the character API. Make sure the backend is running.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/85 p-3 backdrop-blur-sm sm:p-6"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (!saving && event.target === event.currentTarget) onClose()
+      }}
+    >
+      <section
+        className="my-auto w-full max-w-2xl border border-[#51403d] bg-panel shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="editor-title"
+      >
+        <div className="flex items-start justify-between border-b border-line p-5 sm:p-7">
+          <div>
+            <p className="mb-2 font-mono text-[9px] font-bold tracking-[.12em] text-marvel">CHARACTER DATABASE</p>
+            <h2 id="editor-title" className="text-2xl font-bold tracking-[-.04em]">
+              {isEditing ? 'Edit character' : 'Add a character'}
+            </h2>
+          </div>
+          <button
+            className="grid size-9 place-items-center border border-line text-xl text-muted hover:bg-marvel hover:text-white"
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            aria-label="Close character form"
+          >
+            ×
+          </button>
+        </div>
+
+        <form className="grid gap-4 p-5 sm:grid-cols-2 sm:gap-5 sm:p-7" onSubmit={handleSubmit}>
+          {!isEditing && (
+            <label className="grid gap-2 text-xs text-muted">
+              Character ID <span className="text-marvel">Required numeric ID</span>
+              <input
+                className="min-h-11 border border-line bg-ink px-3 text-paper outline-none focus:border-marvel"
+                type="number"
+                min="1"
+                step="1"
+                required
+                value={form.id}
+                onChange={(event) => setForm({ ...form, id: event.target.value })}
+              />
+            </label>
+          )}
+          <label className={`grid gap-2 text-xs text-muted ${isEditing ? 'sm:col-span-2' : ''}`}>
+            Name <span className="text-marvel">Required</span>
+            <input
+              className="min-h-11 border border-line bg-ink px-3 text-paper outline-none focus:border-marvel"
+              type="text"
+              maxLength="120"
+              required
+              value={form.name}
+              onChange={(event) => setForm({ ...form, name: event.target.value })}
+            />
+          </label>
+          <label className="grid gap-2 text-xs text-muted sm:col-span-2">
+            Image URL <span className="text-muted">Optional; use a direct image address</span>
+            <input
+              className="min-h-11 border border-line bg-ink px-3 text-paper outline-none focus:border-marvel"
+              type="url"
+              placeholder="https://example.com/character.jpg"
+              value={form.imageUrl}
+              onChange={(event) => setForm({ ...form, imageUrl: event.target.value })}
+            />
+          </label>
+          <label className="grid gap-2 text-xs text-muted">
+            Comics available
+            <input
+              className="min-h-11 border border-line bg-ink px-3 text-paper outline-none focus:border-marvel"
+              type="number"
+              min="0"
+              step="1"
+              required
+              value={form.comicsAvailable}
+              onChange={(event) => setForm({ ...form, comicsAvailable: event.target.value })}
+            />
+          </label>
+          <label className="grid gap-2 text-xs text-muted sm:col-span-2">
+            Description <span className="text-muted">Optional, up to 2,000 characters</span>
+            <textarea
+              className="min-h-32 resize-y border border-line bg-ink p-3 text-paper outline-none focus:border-marvel"
+              maxLength="2000"
+              value={form.description}
+              onChange={(event) => setForm({ ...form, description: event.target.value })}
+            />
+          </label>
+          {error && (
+            <p className="text-sm text-marvel sm:col-span-2" role="alert">{error}</p>
+          )}
+          <div className="flex justify-end gap-3 border-t border-line pt-4 sm:col-span-2">
+            <button
+              className="min-h-11 border border-line px-4 font-mono text-[9px] font-bold tracking-[.1em] text-muted hover:text-paper"
+              type="button"
+              onClick={onClose}
+              disabled={saving}
+            >
+              CANCEL
+            </button>
+            <button
+              className="min-h-11 bg-marvel px-5 font-mono text-[9px] font-bold tracking-[.1em] text-white hover:bg-[#e02d27] disabled:cursor-wait disabled:opacity-60"
+              type="submit"
+              disabled={saving}
+            >
+              {saving ? 'SAVING...' : isEditing ? 'SAVE CHANGES' : 'ADD CHARACTER'}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  )
+}
+
 function App() {
   const [characters, setCharacters] = useState([])
   const [searchInput, setSearchInput] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCharacter, setSelectedCharacter] = useState(null)
+  const [editorOpen, setEditorOpen] = useState(false)
+  const [characterToEdit, setCharacterToEdit] = useState(null)
+  const [refreshKey, setRefreshKey] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -182,7 +356,7 @@ function App() {
       })
 
     return () => controller.abort()
-  }, [searchTerm])
+  }, [searchTerm, refreshKey])
 
   function handleSearch(event) {
     event.preventDefault()
@@ -192,6 +366,19 @@ function App() {
   function clearSearch() {
     setSearchInput('')
     setSearchTerm('')
+  }
+
+  function openEditor(character = null) {
+    setCharacterToEdit(character)
+    setEditorOpen(true)
+  }
+
+  function handleCharacterSaved() {
+    setEditorOpen(false)
+    setCharacterToEdit(null)
+    setSearchInput('')
+    setSearchTerm('')
+    setRefreshKey((current) => current + 1)
   }
 
   return (
@@ -239,7 +426,16 @@ function App() {
             <p className="mb-2 font-mono text-[10px] font-bold tracking-[.1em] text-marvel">THE COLLECTION</p>
             <h2 id="collection-title" className="text-2xl font-bold tracking-[-.04em] sm:text-[30px]">Meet the characters</h2>
           </div>
-          <span className="pb-1.5 font-mono text-[10px] tracking-[.1em] text-muted">{characters.length} {characters.length === 1 ? 'RESULT' : 'RESULTS'}</span>
+          <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center sm:gap-4">
+            <span className="font-mono text-[10px] tracking-[.1em] text-muted">{characters.length} {characters.length === 1 ? 'RESULT' : 'RESULTS'}</span>
+            <button
+              className="min-h-10 bg-marvel px-3 font-mono text-[9px] font-bold tracking-[.1em] text-white transition hover:bg-[#e02d27] sm:px-4"
+              type="button"
+              onClick={() => openEditor()}
+            >
+              + ADD CHARACTER
+            </button>
+          </div>
         </div>
 
         <form className="mb-[26px] flex min-h-[58px] items-center gap-2 border border-line bg-panel p-1.5 pl-3.5 sm:gap-3.5 sm:pl-[18px]" onSubmit={handleSearch}>
@@ -274,7 +470,12 @@ function App() {
         {!loading && !error && characters.length > 0 && (
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             {characters.map((character) => (
-              <CharacterCard key={character.id} character={character} onSelect={setSelectedCharacter} />
+              <CharacterCard
+                key={character.id}
+                character={character}
+                onSelect={setSelectedCharacter}
+                onEdit={openEditor}
+              />
             ))}
           </div>
         )}
@@ -287,6 +488,13 @@ function App() {
 
       {selectedCharacter && (
         <CharacterDetail character={selectedCharacter} onClose={() => setSelectedCharacter(null)} />
+      )}
+      {editorOpen && (
+        <CharacterEditor
+          character={characterToEdit}
+          onClose={() => setEditorOpen(false)}
+          onSaved={handleCharacterSaved}
+        />
       )}
     </main>
   )
