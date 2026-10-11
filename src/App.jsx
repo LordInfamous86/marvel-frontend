@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabase'
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000'
@@ -7,6 +7,7 @@ const API_ENDPOINT = API_BASE + '/api/marvel/characters'
 function pageFromPath(pathname) {
   if (pathname === '/characters') return 'characters'
   if (pathname === '/battle') return 'battle'
+  if (pathname === '/admin') return 'admin'
   return 'home'
 }
 
@@ -25,7 +26,7 @@ const localArtwork = {
   1009718: '/character-art/wolverine.svg'
 }
 
-function ImageOrPlaceholder({ character, large = false }) {
+function ImageOrPlaceholder({ character, large = false, onImageClick }) {
   const [failedUrl, setFailedUrl] = useState(false)
   const [failedArtwork, setFailedArtwork] = useState(false)
   const artwork = localArtwork[character.id]
@@ -38,13 +39,10 @@ function ImageOrPlaceholder({ character, large = false }) {
     setFailedArtwork(false)
   }, [character.id, character.imageUrl])
 
-  return (
-    <div className={large
-      ? 'relative min-h-56 overflow-hidden bg-[#211c1b] sm:min-h-[350px]'
-      : 'relative min-h-[210px] overflow-hidden bg-[#211c1b]'}>
+  const imageContent = <>
       {imageUrl ? (
         <img
-          className="absolute inset-0 h-full min-h-[inherit] w-full object-cover object-top"
+          className="absolute inset-0 h-full min-h-[inherit] w-full object-cover object-top transition-transform duration-300 group-hover:scale-105 group-active:scale-[1.08]"
           src={imageUrl}
           alt={character.name}
           onError={() => {
@@ -64,7 +62,20 @@ function ImageOrPlaceholder({ character, large = false }) {
           #{character.id}
         </span>
       )}
-    </div>
+  </>
+
+  if (large) return <div className="relative min-h-56 overflow-hidden bg-[#211c1b] sm:min-h-[350px]">{imageContent}</div>
+
+  return (
+    <button
+      className="group relative min-h-[210px] w-full cursor-zoom-in overflow-hidden bg-[#211c1b] text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-marvel focus-visible:outline-offset-[-3px]"
+      type="button"
+      onClick={onImageClick}
+      aria-label={`Highlight ${character.name}`}
+      title={`Highlight ${character.name}`}
+    >
+      {imageContent}
+    </button>
   )
 }
 
@@ -111,10 +122,10 @@ function PaginationControls({ currentPage, totalPages, pageSize, totalItems, onP
   )
 }
 
-function CharacterCard({ character, onSelect, onEdit }) {
+function CharacterCard({ character, onSelect, onPreviewImage, onEdit, onDelete, adminMode = false, deleting = false }) {
   return (
     <article className="grid min-h-[210px] grid-cols-[118px_1fr] overflow-hidden border border-line bg-gradient-to-br from-panel to-[#151514] transition hover:-translate-y-0.5 hover:border-[#6c3531] sm:grid-cols-[154px_1fr]">
-      <ImageOrPlaceholder character={character} />
+      <ImageOrPlaceholder character={character} onImageClick={() => onPreviewImage(character)} />
       <div className="flex min-w-0 flex-col items-start p-3 sm:p-[18px_17px_15px]">
         <p className="mb-2 font-mono text-[8px] font-bold tracking-[.1em] text-marvel">MARVEL CHARACTER</p>
         <h2 className="text-base font-bold tracking-[-.025em] sm:text-lg">{character.name}</h2>
@@ -127,14 +138,21 @@ function CharacterCard({ character, onSelect, onEdit }) {
         <div className="mt-auto flex w-full items-center justify-between gap-2 border-t border-line pt-2.5">
           <span className="text-[10px] text-paper/90">{character.comicsAvailable ?? 0} comics</span>
           <div className="flex shrink-0 items-center gap-3">
-            <button
-              className="font-mono text-[8px] font-bold tracking-[.1em] text-muted hover:text-paper"
-              type="button"
-              onClick={() => onEdit(character)}
-              aria-label={`Edit ${character.name}`}
-            >
-              EDIT
-            </button>
+            {adminMode && <>
+              <button
+                className="font-mono text-[8px] font-bold tracking-[.1em] text-muted hover:text-paper"
+                type="button"
+                onClick={() => onEdit(character)}
+                aria-label={`Edit ${character.name}`}
+              >EDIT</button>
+              <button
+                className="font-mono text-[8px] font-bold tracking-[.1em] text-marvel hover:text-[#ff756b]"
+                type="button"
+                onClick={() => onDelete(character)}
+                disabled={deleting}
+                aria-label={`Delete ${character.name}`}
+              >{deleting ? 'DELETING…' : 'DELETE'}</button>
+            </>}
             <button
               className="font-mono text-[8px] font-bold tracking-[.1em] text-marvel hover:text-[#ff756b]"
               type="button"
@@ -312,11 +330,18 @@ function CharacterEditor({ character, onClose, onSaved }) {
     if (!isEditing) payload.id = Number(form.id)
 
     try {
+      if (!supabase) throw new Error('Sign-in is not configured for this app.')
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) throw new Error('Please sign in again before saving changes.')
+
       const response = await fetch(
         isEditing ? `${API_ENDPOINT}/${character.id}` : API_ENDPOINT,
         {
           method: isEditing ? 'PUT' : 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`
+          },
           body: JSON.stringify(payload)
         }
       )
@@ -576,19 +601,20 @@ function PowerStatBars({ stats = {}, profile = false }) {
   )
 }
 
-function UniverseCard({ character, onSelect, onToggleFavorite, isFavorite, favoriteBusy }) {
+function UniverseCard({ character, onSelect, onPreviewImage, onToggleFavorite, onSendToBattle, onRequestSignIn, signedIn, authLoading, isFavorite, favoriteBusy }) {
   const biography = character.biography || {}
-  const universe = getUniverseName(biography.publisher)
+  const universe = getUniverseName(biography.publisher, character)
   const imageUrl = character.images?.md || character.images?.sm
   const powerstats = character.powerstats || {}
   const overview = buildCharacterOverview(character)
 
   return (
     <article className="grid min-h-[210px] grid-cols-[118px_1fr] overflow-hidden border border-line bg-gradient-to-br from-panel to-[#151514] transition hover:-translate-y-0.5 hover:border-[#6c3531] sm:grid-cols-[154px_1fr]">
-      <div className="relative min-h-[210px] overflow-hidden bg-[#211c1b]">
-        {imageUrl ? <img className="absolute inset-0 h-full w-full object-cover object-top" src={imageUrl} alt={character.name} loading="lazy" /> : <div className="grid h-full min-h-[210px] place-items-center text-4xl font-extrabold text-[#f3b4a9]/80">{character.name?.split(' ').map((part) => part[0]).slice(0, 2).join('')}</div>}
+      <button className="group relative min-h-[210px] w-full cursor-zoom-in overflow-hidden bg-[#211c1b] text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-marvel focus-visible:outline-offset-[-3px]" type="button" onClick={() => onPreviewImage(character)} aria-label={`View a larger image of ${character.name}`} title={`View larger image of ${character.name}`}>
+        {imageUrl ? <img className="absolute inset-0 h-full w-full object-cover object-top transition-transform duration-300 group-hover:scale-105 group-active:scale-[1.08]" src={imageUrl} alt={character.name} loading="lazy" /> : <div className="grid h-full min-h-[210px] place-items-center text-4xl font-extrabold text-[#f3b4a9]/80">{character.name?.split(' ').map((part) => part[0]).slice(0, 2).join('')}</div>}
         <span className="absolute bottom-2.5 left-2.5 bg-black/75 px-2 py-1 font-mono text-[9px] text-white">#{character.id}</span>
-      </div>
+        <span className="absolute right-2 top-2 bg-black/75 px-2 py-1 font-mono text-[8px] tracking-[.08em] text-white opacity-80 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">VIEW IMAGE</span>
+      </button>
       <div className="flex min-w-0 flex-col items-start p-3 sm:p-[18px_17px_15px]">
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <span className="inline-flex border border-marvel/40 bg-marvel/10 px-2 py-1 font-mono text-[9px] font-bold tracking-[.08em] text-[#ff756b]">{universe.toUpperCase()}</span>
@@ -604,8 +630,53 @@ function UniverseCard({ character, onSelect, onToggleFavorite, isFavorite, favor
           </button>
           <button className="font-mono text-[8px] font-bold tracking-[.1em] text-marvel hover:text-[#ff756b]" type="button" onClick={() => onSelect(character)}>VIEW PROFILE <span className="ml-1 text-sm">↗</span></button>
         </div>
+        <button className="mt-2 min-h-8 w-full border border-marvel/50 bg-marvel/5 px-2 text-left font-mono text-[8px] font-bold tracking-[.1em] text-[#ff756b] transition hover:border-marvel hover:bg-marvel/15 disabled:cursor-wait disabled:opacity-60" type="button" onClick={() => signedIn ? onSendToBattle(character) : onRequestSignIn()} disabled={authLoading} title={signedIn ? `Send ${character.name} to Battle mode` : 'Sign in to send characters to Battle mode'}>
+          {authLoading ? 'CHECKING ACCOUNT…' : signedIn ? '⚔ SEND TO BATTLE' : 'SIGN IN TO SEND TO BATTLE'}
+        </button>
       </div>
     </article>
+  )
+}
+
+function CharacterImageModal({ character, onClose }) {
+  const closeButton = useRef(null)
+  const previouslyFocused = useRef(document.activeElement)
+  const [imageFailed, setImageFailed] = useState(false)
+  const imageUrl = character.images?.lg || character.images?.md || character.imageUrl || localArtwork[character.id]
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    closeButton.current?.focus()
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') onClose()
+      if (event.key === 'Tab') {
+        event.preventDefault()
+        closeButton.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', handleKeyDown)
+      previouslyFocused.current?.focus?.()
+    }
+  }, [onClose])
+
+  useEffect(() => setImageFailed(false), [character.id, imageUrl])
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/90 p-3 backdrop-blur-sm sm:p-6" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+      <section className="character-image-modal relative flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden border border-white/15 bg-[#101010] shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="character-image-title">
+        <header className="flex shrink-0 items-center justify-between gap-4 border-b border-white/10 px-4 py-3 sm:px-6">
+          <div className="min-w-0"><p className="font-mono text-[8px] font-bold tracking-[.14em] text-marvel">CHARACTER IMAGE</p><h2 id="character-image-title" className="truncate text-lg font-bold text-paper sm:text-xl">{character.name}</h2></div>
+          <button ref={closeButton} className="grid size-10 shrink-0 place-items-center border border-white/25 text-2xl text-paper transition hover:border-marvel hover:bg-marvel focus-visible:outline focus-visible:outline-2 focus-visible:outline-marvel" type="button" onClick={onClose} aria-label="Close image preview">×</button>
+        </header>
+        <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-[radial-gradient(ellipse_at_center,#2a201f,#0b0b0b_70%)] p-3 sm:p-6">
+          {imageUrl && !imageFailed ? <img className="character-image-modal-art max-h-[calc(94vh-100px)] max-w-full object-contain" src={imageUrl} alt={`${character.name}, full image`} onError={() => setImageFailed(true)} /> : <p className="p-12 text-center text-sm text-muted">A larger image isn’t available for {character.name} yet.</p>}
+        </div>
+      </section>
+    </div>
   )
 }
 
@@ -670,8 +741,20 @@ function AuthModal({ mode, setMode, onClose }) {
   )
 }
 
-function getUniverseName(publisher = '') {
+// A few source records put a related character's name in the publisher field.
+// Keep the original biography untouched, but categorize these clear cases correctly.
+const knownMarvelCharacters = new Set([
+  'deadpool', 'evil deadpool', 'venompool', 'captain marvel', 'yellowjacket',
+  'toxin', 'venom', 'vision', 'angel', 'meltdown', 'ant-man', 'atlas', 'hawkeye',
+  'ronin', 'kang', 'phoenix', 'she-thing', 'luke cage', 'jessica jones', 'thor',
+  'venom iii', 'scorpion', 'ms marvel ii', 'warpath', 'scarlet spider', 'anti-venom',
+  'archangel', 'angel salvadore', 'tempest', 'boom-boom',
+])
+
+function getUniverseName(publisher = '', character = null) {
   const normalized = String(publisher || '').trim().toLocaleLowerCase()
+  const characterName = String(character?.name || '').trim().toLocaleLowerCase()
+  if (knownMarvelCharacters.has(characterName)) return 'Marvel'
   if (normalized === 'marvel comics') return 'Marvel'
   if (normalized === 'dc comics' || normalized === 'wildstorm') return 'DC'
   if (normalized === 'dark horse comics') return 'Dark Horse'
@@ -706,7 +789,7 @@ function UniverseDetail({ character, onClose }) {
         <div className="grid sm:grid-cols-[.7fr_1.3fr]">
           <div className="relative min-h-64 bg-[#211c1b]">{character.images?.lg || character.images?.md ? <img className="absolute inset-0 h-full w-full object-cover object-top" src={character.images.lg || character.images.md} alt={character.name} /> : <div className="grid h-full min-h-64 place-items-center text-6xl font-black text-marvel">{character.name?.[0]}</div>}<span className="absolute bottom-3 left-3 bg-black/75 px-2 py-1 font-mono text-[9px] text-white">SOURCE ID #{character.id}</span></div>
           <div className="p-5 sm:p-8">
-            <div className="mb-5 flex items-start justify-between gap-4"><div><p className="mb-2 font-mono text-[9px] font-bold tracking-[.12em] text-marvel">{getUniverseName(biography.publisher).toUpperCase()} {biography.publisher && getUniverseName(biography.publisher) !== biography.publisher ? `· ${biography.publisher}` : ''}</p><h2 id="universe-detail-title" className="text-3xl font-extrabold tracking-[-.04em]">{character.name}</h2>{biography.fullName && <p className="mt-1 text-sm text-muted">{biography.fullName}</p>}</div><button className="grid size-9 shrink-0 place-items-center border border-line text-xl text-muted hover:bg-marvel hover:text-white" type="button" onClick={onClose} aria-label="Close profile">×</button></div>
+            <div className="mb-5 flex items-start justify-between gap-4"><div><p className="mb-2 font-mono text-[9px] font-bold tracking-[.12em] text-marvel">{getUniverseName(biography.publisher, character).toUpperCase()}{biography.publisher && getUniverseName(biography.publisher, character) !== biography.publisher && <span className="ml-2 text-muted">· SOURCE: {biography.publisher}</span>}</p><h2 id="universe-detail-title" className="text-3xl font-extrabold tracking-[-.04em]">{character.name}</h2>{biography.fullName && <p className="mt-1 text-sm text-muted">{biography.fullName}</p>}</div><button className="grid size-9 shrink-0 place-items-center border border-line text-xl text-muted hover:bg-marvel hover:text-white" type="button" onClick={onClose} aria-label="Close profile">×</button></div>
             <section className="mb-6 border border-line bg-ink p-4 sm:p-5"><h3 className="mb-2 font-mono text-[9px] font-bold tracking-[.12em] text-marvel">OVERVIEW / SOURCE-BASED SUMMARY</h3><p className="text-xs leading-relaxed text-paper/90">{overview}</p></section>
             <section className="mb-6"><h3 className="mb-3 font-mono text-[9px] tracking-[.12em] text-muted">POWERSTATS / 100</h3><PowerStatBars stats={Object.fromEntries(powerstats)} profile /></section>
             <div className="grid gap-5 sm:grid-cols-2">{sections.map(([title, fields]) => { const visibleFields = fields.map(([label, value]) => [label, displayValue(value)]).filter(([, value]) => value); if (!visibleFields.length) return null; return <section key={title}><h3 className="mb-2 border-b border-line pb-2 font-mono text-[9px] tracking-[.12em] text-muted">{title}</h3><dl className="grid gap-2 text-xs">{visibleFields.map(([label, value]) => <div key={label}><dt className="mb-0.5 text-[10px] text-muted">{label}</dt><dd className="break-words leading-relaxed">{value}</dd></div>)}</dl></section>})}</div>
@@ -714,6 +797,273 @@ function UniverseDetail({ character, onClose }) {
         </div>
       </section>
     </div>
+  )
+}
+
+function playFightSound(existingContext) {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext
+  if (!existingContext && !AudioContextClass) return
+
+  const context = existingContext || new AudioContextClass()
+  if (context.state === 'suspended') context.resume().catch(() => {})
+  const now = context.currentTime
+  const length = Math.floor(context.sampleRate * 0.7)
+  const buffer = context.createBuffer(1, length, context.sampleRate)
+  const channel = buffer.getChannelData(0)
+  for (let index = 0; index < length; index += 1) channel[index] = (Math.random() * 2 - 1) * (1 - index / length)
+
+  const noise = context.createBufferSource()
+  const filter = context.createBiquadFilter()
+  const noiseGain = context.createGain()
+  noise.buffer = buffer
+  filter.type = 'lowpass'
+  filter.frequency.setValueAtTime(1400, now)
+  filter.frequency.exponentialRampToValueAtTime(120, now + 0.62)
+  noiseGain.gain.setValueAtTime(0.001, now)
+  noiseGain.gain.exponentialRampToValueAtTime(0.3, now + 0.12)
+  noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.68)
+  noise.connect(filter).connect(noiseGain).connect(context.destination)
+  noise.start(now)
+
+  const impact = context.createOscillator()
+  const impactGain = context.createGain()
+  impact.type = 'sine'
+  impact.frequency.setValueAtTime(95, now + 0.42)
+  impact.frequency.exponentialRampToValueAtTime(38, now + 0.72)
+  impactGain.gain.setValueAtTime(0.001, now + 0.4)
+  impactGain.gain.exponentialRampToValueAtTime(0.42, now + 0.44)
+  impactGain.gain.exponentialRampToValueAtTime(0.001, now + 0.78)
+  impact.connect(impactGain).connect(context.destination)
+  impact.start(now + 0.4)
+  impact.stop(now + 0.8)
+}
+
+function BattleMode({ characters, loading, error, initialCharacterId }) {
+  const [leftId, setLeftId] = useState(() => initialCharacterId ? String(initialCharacterId) : '')
+  const [rightId, setRightId] = useState('')
+  const [score, setScore] = useState({ left: 0, right: 0, ties: 0 })
+  const [rounds, setRounds] = useState([])
+  const [lastResult, setLastResult] = useState(null)
+  const [battlePhase, setBattlePhase] = useState('select')
+  const [countdown, setCountdown] = useState(null)
+  const [soundOn, setSoundOn] = useState(true)
+  const countdownTimer = useRef(null)
+  const impactTimer = useRef(null)
+  const audioContext = useRef(null)
+
+  useEffect(() => () => {
+    window.clearInterval(countdownTimer.current)
+    window.clearTimeout(impactTimer.current)
+    audioContext.current?.close()
+  }, [])
+
+  const left = characters.find((character) => String(character.id) === leftId)
+  const right = characters.find((character) => String(character.id) === rightId)
+  const victor = lastResult?.winner === 'left' ? left : lastResult?.winner === 'right' ? right : null
+  const victoryText = (character) => {
+    const name = character?.name?.toLocaleLowerCase() || ''
+    if (name.includes('spider-man')) return 'One web, one win. Your neighborhood is safe.'
+    if (name.includes('iron man')) return 'Suit up. Show up. Win.'
+    if (name.includes('thor')) return 'The storm answers to me.'
+    if (name.includes('hulk')) return 'Hulk wins. Arena sleeps.'
+    if (name.includes('captain america')) return 'Stand your ground. Stand victorious.'
+    if (name.includes('black panther')) return 'Wakanda’s strength stands unshaken.'
+    if (name.includes('black widow')) return 'The last move was always mine.'
+    if (name.includes('doctor strange')) return 'I saw this victory coming.'
+    if (name.includes('wolverine')) return 'Still standing. Still in control.'
+    if (name.includes('wonder woman')) return 'Courage carries the day.'
+    if (name.includes('batman')) return 'The dark belongs to the prepared.'
+    if (name.includes('superman')) return 'Hope rises. So do I.'
+    if (name.includes('deadpool')) return 'Victory? Nailed it. Audience? You’re welcome.'
+    if (name.includes('captain marvel')) return 'Higher, faster, victorious.'
+
+    const statLines = {
+      intelligence: 'Every move was planned. The win was inevitable.',
+      strength: 'The ground shook. The result didn’t.',
+      speed: 'Too fast to stop. First to victory.',
+      durability: 'Still standing. Still victorious.',
+      power: 'All that power—and one clear winner.',
+      combat: 'Precision. Timing. Victory.',
+    }
+    const dominantStat = powerStatNames.reduce((best, stat) =>
+      (statValue(character, stat) ?? -1) > (statValue(character, best) ?? -1) ? stat : best,
+    powerStatNames[0])
+    return statLines[dominantStat]
+  }
+  const statValue = (character, stat) => {
+    const value = character?.powerstats?.[stat]
+    return value === '' || value === '-' || value === null || value === undefined || !Number.isFinite(Number(value))
+      ? null
+      : Math.max(0, Math.min(100, Number(value)))
+  }
+
+  function clearMatchTimers() {
+    window.clearInterval(countdownTimer.current)
+    window.clearTimeout(impactTimer.current)
+    countdownTimer.current = null
+    impactTimer.current = null
+  }
+
+  function prepareBattleSound() {
+    if (!soundOn) return
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext
+    if (!AudioContextClass) return
+    try {
+      if (!audioContext.current) audioContext.current = new AudioContextClass()
+      if (audioContext.current.state === 'suspended') audioContext.current.resume().catch(() => {})
+    } catch {
+      audioContext.current = null
+    }
+  }
+
+  function resolveFight(firstId, secondId) {
+    const first = characters.find((character) => String(character.id) === firstId)
+    const second = characters.find((character) => String(character.id) === secondId)
+    if (!first || !second) return
+    const leftTotal = powerStatNames.reduce((total, stat) => total + (statValue(first, stat) ?? 0), 0)
+    const rightTotal = powerStatNames.reduce((total, stat) => total + (statValue(second, stat) ?? 0), 0)
+    const winner = leftTotal === rightTotal ? 'tie' : leftTotal > rightTotal ? 'left' : 'right'
+    const result = { winner, leftName: first.name, rightName: second.name }
+    setBattlePhase('clash')
+    if (soundOn) playFightSound(audioContext.current)
+    impactTimer.current = window.setTimeout(() => {
+      setLastResult(result)
+      setBattlePhase(winner === 'tie' ? 'draw' : 'victory')
+      setRounds((current) => [result, ...current].slice(0, 8))
+      setScore((current) => ({ ...current, [winner === 'tie' ? 'ties' : winner]: current[winner === 'tie' ? 'ties' : winner] + 1 }))
+      impactTimer.current = null
+    }, 1050)
+  }
+
+  function startCountdown(firstId, secondId) {
+    clearMatchTimers()
+    prepareBattleSound()
+    if (!firstId || !secondId || firstId === secondId) {
+      setCountdown(null)
+      setBattlePhase('select')
+      return
+    }
+    setLastResult(null)
+    setCountdown(3)
+    setBattlePhase('countdown')
+    let remaining = 3
+    countdownTimer.current = window.setInterval(() => {
+      remaining -= 1
+      if (remaining <= 0) {
+        window.clearInterval(countdownTimer.current)
+        countdownTimer.current = null
+        setCountdown(null)
+        resolveFight(firstId, secondId)
+      } else {
+        setCountdown(remaining)
+      }
+    }, 1000)
+  }
+
+  function handleFighterChange(side, nextId) {
+    clearMatchTimers()
+    setLastResult(null)
+    setCountdown(null)
+    setRounds([])
+    setScore({ left: 0, right: 0, ties: 0 })
+    const nextLeft = side === 'left' ? nextId : leftId
+    const nextRight = side === 'right' ? nextId : rightId
+    if (side === 'left') setLeftId(nextId)
+    else setRightId(nextId)
+    startCountdown(nextLeft, nextRight)
+  }
+
+  function randomizeFighters() {
+    if (characters.length < 2) return
+    const firstIndex = Math.floor(Math.random() * characters.length)
+    let secondIndex = Math.floor(Math.random() * (characters.length - 1))
+    if (secondIndex >= firstIndex) secondIndex += 1
+    const firstId = String(characters[firstIndex].id)
+    const secondId = String(characters[secondIndex].id)
+    setLeftId(firstId)
+    setRightId(secondId)
+    setRounds([])
+    setScore({ left: 0, right: 0, ties: 0 })
+    startCountdown(firstId, secondId)
+  }
+
+  function resetSeries() {
+    setScore({ left: 0, right: 0, ties: 0 })
+    setRounds([])
+    setLastResult(null)
+    clearMatchTimers()
+    setBattlePhase(leftId && rightId ? 'ready' : 'select')
+    setCountdown(null)
+  }
+
+  const fighterCard = (character, side) => (
+    <article className={`battle-card battle-card-${side} ${lastResult?.winner === side || lastResult?.winner === 'tie' ? 'is-winner' : lastResult ? 'is-loser' : ''}`}>
+      <div className="battle-card-image">
+        {character?.images?.lg || character?.images?.md
+          ? <img src={character.images.lg || character.images.md} alt={character.name} />
+          : <span aria-hidden="true">{character?.name?.[0] || '?'}</span>}
+      </div>
+      <div className="battle-card-caption">
+        <span>{getUniverseName(character?.biography?.publisher, character).toUpperCase()}</span>
+        <h2>{character?.name || 'Choose a fighter'}</h2>
+        {lastResult?.winner === side && <strong className="battle-victory-label">VICTOR</strong>}
+      </div>
+    </article>
+  )
+
+  if (loading) return <section className="py-12 text-center text-sm text-muted">Loading the multiverse for battle...</section>
+  if (error || characters.length < 2) return <section className="my-10 border border-line bg-panel p-6 text-center text-sm text-muted">{error || 'Battle mode needs at least two imported characters. Import the full catalog, then refresh.'}</section>
+
+  return (
+    <section className="py-8 sm:py-10" aria-labelledby="battle-title">
+      <div className="mb-6 border-b border-line pb-6">
+        <p className="mb-2 font-mono text-[9px] font-bold tracking-[.14em] text-marvel">HERO ARCHIVE / ARENA</p>
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div><h1 id="battle-title" className="text-3xl font-extrabold tracking-[-.04em] sm:text-4xl">Enter the arena</h1><p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">{left ? `${left.name} is ready as Player One. Choose an opponent to begin the three-second countdown.` : 'Choose two challengers. Once both are selected, the three-second countdown begins.'}</p></div>
+          <div className="flex items-center gap-2">
+            <button className="min-h-10 border border-line px-3 font-mono text-[8px] font-bold tracking-[.08em] text-paper hover:border-marvel disabled:opacity-50" type="button" onClick={randomizeFighters} disabled={battlePhase === 'clash' || battlePhase === 'countdown'}>RANDOM MATCH</button>
+            <button className="min-h-10 border border-line px-3 font-mono text-[8px] font-bold tracking-[.08em] text-muted hover:text-paper disabled:opacity-50" type="button" onClick={resetSeries} disabled={battlePhase === 'clash' || battlePhase === 'countdown'}>RESET SCORE</button>
+            <button className="min-h-10 border border-line px-3 font-mono text-[8px] font-bold tracking-[.08em] text-muted hover:text-paper disabled:opacity-50" type="button" onClick={() => setSoundOn((current) => !current)} disabled={battlePhase === 'clash' || battlePhase === 'countdown'} aria-pressed={soundOn}>{soundOn ? 'SOUND ON' : 'SOUND OFF'}</button>
+          </div>
+        </div>
+      </div>
+
+      <div className="mb-4 grid gap-3 sm:grid-cols-2">
+        {[['Player one', leftId, rightId, 'left'], ['Player two', rightId, leftId, 'right']].map(([label, value, otherValue, side]) => <label key={label} className="grid gap-2 border border-line bg-panel p-3 font-mono text-[8px] font-bold tracking-[.12em] text-muted">{label.toUpperCase()}
+          <select className="min-h-10 w-full border border-line bg-ink px-2 font-sans text-xs font-normal tracking-normal text-paper outline-none focus:border-marvel disabled:opacity-50" value={value} disabled={battlePhase === 'clash' || battlePhase === 'countdown'} onChange={(event) => handleFighterChange(side, event.target.value)} aria-label={`Choose ${label}`}>
+            <option value="">Choose a character…</option>
+            {characters.map((option) => <option key={option.id} value={option.id} disabled={String(option.id) === otherValue}>{option.name} · {getUniverseName(option.biography?.publisher, option)}</option>)}
+          </select>
+        </label>)}
+      </div>
+
+      <div className="battle-arena" data-phase={battlePhase}>
+        <div className="battle-arena-grid" aria-hidden="true" />
+        <div className="battle-arena-kicker"><span>HERO ARCHIVE</span><span>ROUND {score.left + score.right + score.ties + 1}</span></div>
+        {battlePhase === 'victory' && victor ? <section className="battle-victory-screen" role="status" aria-live="polite">
+          <p className="battle-victory-kicker">VICTORY BY STAT DOMINANCE</p>
+          <div className="battle-victory-portrait">{victor.images?.lg || victor.images?.md ? <img src={victor.images.lg || victor.images.md} alt={victor.name} /> : <span>{victor.name?.[0]}</span>}</div>
+          <h2>{victor.name}</h2>
+          <p className="battle-victory-story">{victoryText(victor)}</p>
+          <button className="battle-rematch" type="button" onClick={() => startCountdown(leftId, rightId)}>REMATCH</button>
+        </section> : battlePhase === 'draw' ? <section className="battle-draw-screen" role="status" aria-live="polite"><p className="battle-victory-kicker">EVENLY MATCHED</p><h2>It’s a draw!</h2><p>{left?.name} and {right?.name} have the same overall power rating. Ready for another round?</p><button className="battle-rematch" type="button" onClick={() => startCountdown(leftId, rightId)}>REMATCH</button></section> : <>
+          {fighterCard(left, 'left')}
+          <div className="battle-versus" aria-hidden="true">VS</div>
+          {fighterCard(right, 'right')}
+          <div className="battle-impact-flash" aria-hidden="true" />
+          {battlePhase === 'countdown' && <p key={countdown} className="battle-countdown-copy" role="status" aria-live="assertive">{countdown}</p>}
+          {battlePhase === 'clash' && <p className="battle-clash-copy" role="status" aria-live="assertive">FIGHT!</p>}
+          {battlePhase === 'select' && <p className="battle-select-copy">SELECT TWO CHALLENGERS</p>}
+        </>}
+      </div>
+
+      <div className="my-5 grid grid-cols-3 border border-line bg-panel text-center">
+        <div className="p-3"><span className="block truncate font-mono text-[8px] tracking-[.1em] text-muted">{left?.name || 'FIGHTER 1'}</span><strong className="mt-1 block text-2xl text-paper">{score.left}</strong></div>
+        <div className="border-x border-line p-3"><span className="block font-mono text-[8px] tracking-[.1em] text-muted">DRAWS</span><strong className="mt-1 block text-2xl text-muted">{score.ties}</strong></div>
+        <div className="p-3"><span className="block truncate font-mono text-[8px] tracking-[.1em] text-muted">{right?.name || 'FIGHTER 2'}</span><strong className="mt-1 block text-2xl text-paper">{score.right}</strong></div>
+      </div>
+      {rounds.length > 0 && <section className="mt-6 border border-line bg-panel p-4 sm:p-5" aria-labelledby="round-history-title"><div className="mb-3 flex items-center justify-between"><h2 id="round-history-title" className="font-mono text-[9px] font-bold tracking-[.12em] text-muted">RECENT FIGHTS</h2><span className="font-mono text-[8px] text-muted">{rounds.length} SHOWN</span></div><ol className="grid gap-2">{rounds.map((round, index) => <li key={`${round.leftName}-${round.rightName}-${index}`} className="flex flex-wrap items-center justify-between gap-2 border-t border-line py-2 text-xs"><span>{round.leftName} <span className="mx-2 text-muted">vs</span>{round.rightName}</span><span className="font-mono text-[8px] font-bold text-marvel">{round.winner === 'tie' ? 'DRAW' : `${round.winner === 'left' ? round.leftName : round.rightName} WINS`}</span></li>)}</ol></section>}
+    </section>
   )
 }
 
@@ -729,6 +1079,11 @@ function App() {
   const [selectedUniverseCharacter, setSelectedUniverseCharacter] = useState(null)
   const [user, setUser] = useState(null)
   const [authLoading, setAuthLoading] = useState(Boolean(supabase))
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [adminLoading, setAdminLoading] = useState(Boolean(supabase))
+  const [adminError, setAdminError] = useState('')
+  const [adminActionError, setAdminActionError] = useState('')
+  const [deletingIds, setDeletingIds] = useState(new Set())
   const [authOpen, setAuthOpen] = useState(false)
   const [authMode, setAuthMode] = useState('signin')
   const [favoriteIds, setFavoriteIds] = useState(new Set())
@@ -736,11 +1091,13 @@ function App() {
   const [favoritesLoading, setFavoritesLoading] = useState(false)
   const [favoritesError, setFavoritesError] = useState('')
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
+  const [imagePreviewCharacter, setImagePreviewCharacter] = useState(null)
   const [searchInput, setSearchInput] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [universeSearchTerm, setUniverseSearchTerm] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(24)
+  const [battleCharacterId, setBattleCharacterId] = useState('')
   const [selectedCharacter, setSelectedCharacter] = useState(null)
   const [editorOpen, setEditorOpen] = useState(false)
   const [characterToEdit, setCharacterToEdit] = useState(null)
@@ -762,6 +1119,20 @@ function App() {
     const nextPath = nextPage === 'home' ? '/' : `/${nextPage}`
     if (window.location.pathname !== nextPath) window.history.pushState({}, '', nextPath)
     setPage(nextPage)
+    if (nextPage === 'admin') {
+      setCurrentPage(1)
+      setSearchInput('')
+      setSearchTerm('')
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  function sendCharacterToBattle(character) {
+    setBattleCharacterId(String(character.id))
+    setSelectedUniverseCharacter(null)
+    setImagePreviewCharacter(null)
+    if (window.location.pathname !== '/battle') window.history.pushState({}, '', '/battle')
+    setPage('battle')
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -770,12 +1141,14 @@ function App() {
 
     supabase.auth.getSession().then(({ data, error: sessionError }) => {
       setUser(data.session?.user ?? null)
+      setAdminLoading(Boolean(data.session?.user))
       setAuthLoading(false)
       if (sessionError) setFavoritesError(sessionError.message)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
+      setAdminLoading(Boolean(session?.user))
       setAuthLoading(false)
       if (!session) {
         setFavoriteIds(new Set())
@@ -788,6 +1161,9 @@ function App() {
 
   useEffect(() => {
     if (!supabase || !user) {
+      setIsAdmin(false)
+      setAdminLoading(false)
+      setAdminError('')
       setFavoriteIds(new Set())
       setFavoritesLoading(false)
       return
@@ -813,7 +1189,36 @@ function App() {
   }, [user])
 
   useEffect(() => {
-    if (page !== 'characters') return undefined
+    let active = true
+    if (!supabase || !user) return () => { active = false }
+
+    setAdminLoading(true)
+    setAdminError('')
+    supabase.auth.getSession().then(async ({ data, error: sessionError }) => {
+      if (sessionError) throw sessionError
+      const token = data.session?.access_token
+      if (!token) throw new Error('Please sign in again to check administrator access.')
+
+      const response = await fetch(API_BASE + '/api/auth/me', {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(result.error || 'Administrator access could not be checked.')
+      if (active) setIsAdmin(result.isAdmin === true)
+    }).catch((requestError) => {
+      if (active) {
+        setIsAdmin(false)
+        setAdminError(requestError.message || 'Could not check administrator access. Make sure the backend and admin database setup are ready.')
+      }
+    }).finally(() => {
+      if (active) setAdminLoading(false)
+    })
+
+    return () => { active = false }
+  }, [user])
+
+  useEffect(() => {
+    if (page !== 'characters' && page !== 'admin') return undefined
     const controller = new AbortController()
     const url = new URL(API_ENDPOINT)
     if (searchTerm) url.searchParams.set('nameStartsWith', searchTerm)
@@ -914,6 +1319,36 @@ function App() {
     }
   }
 
+  async function deleteCharacter(character) {
+    if (!window.confirm(`Delete ${character.name} from the curated Marvel catalog?`)) return
+    setAdminActionError('')
+    setDeletingIds((current) => new Set(current).add(Number(character.id)))
+    try {
+      if (!supabase) throw new Error('Sign-in is not configured for this app.')
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError) throw sessionError
+      if (!session?.access_token) throw new Error('Please sign in again before deleting a character.')
+
+      const response = await fetch(`${API_ENDPOINT}/${character.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${session.access_token}` }
+      })
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}))
+        throw new Error(result.error || 'The character could not be deleted.')
+      }
+      setRefreshKey((current) => current + 1)
+    } catch (requestError) {
+      setAdminActionError(requestError.message || 'Could not delete this character.')
+    } finally {
+      setDeletingIds((current) => {
+        const next = new Set(current)
+        next.delete(Number(character.id))
+        return next
+      })
+    }
+  }
+
   function clearSearch() {
     setCurrentPage(1)
     setSearchInput('')
@@ -940,12 +1375,12 @@ function App() {
     const biography = character.biography || {}
     const searchValues = [character.name, biography.fullName, biography.publisher, ...(biography.aliases || [])]
     const matchesSearch = !normalizedSearch || searchValues.some((value) => String(value || '').toLocaleLowerCase().includes(normalizedSearch))
-    const matchesUniverse = !universeFilter || getUniverseName(biography.publisher) === universeFilter
+    const matchesUniverse = !universeFilter || getUniverseName(biography.publisher, character) === universeFilter
     const matchesFavorites = !showFavoritesOnly || favoriteIds.has(Number(character.id))
     return matchesSearch && matchesUniverse && matchesFavorites
   })
   const universeCounts = universeCharacters.reduce((counts, character) => {
-    const universe = getUniverseName(character.biography?.publisher)
+    const universe = getUniverseName(character.biography?.publisher, character)
     counts[universe] = (counts[universe] || 0) + 1
     return counts
   }, {})
@@ -954,7 +1389,7 @@ function App() {
   const displayedCount = catalogMode === 'universe' ? (universeFilter ? universeCounts[universeFilter] || 0 : universeCount) : characters.length
   const displayedLoading = catalogMode === 'universe' ? universeLoading : loading
   const displayedError = catalogMode === 'universe' ? universeError : error
-  const activeCharacters = catalogMode === 'universe' ? visibleUniverseCharacters : characters
+  const activeCharacters = page === 'admin' ? characters : (catalogMode === 'universe' ? visibleUniverseCharacters : characters)
   const totalPages = Math.max(1, Math.ceil(activeCharacters.length / pageSize))
   const safeCurrentPage = Math.min(currentPage, totalPages)
   const paginatedCharacters = activeCharacters.slice((safeCurrentPage - 1) * pageSize, safeCurrentPage * pageSize)
@@ -983,6 +1418,7 @@ function App() {
           {[
             ['home', 'HOME'],
             ['characters', 'CHARACTERS'],
+            ...(isAdmin ? [['admin', 'ADMIN']] : []),
             ['battle', 'BATTLE']
           ].map(([destination, label]) => (
             <a
@@ -991,7 +1427,7 @@ function App() {
               onClick={(event) => navigate(event, destination)}
               aria-current={page === destination ? 'page' : undefined}
               className={`px-2 py-2 font-mono text-[8px] font-bold tracking-[.08em] transition sm:px-3 sm:text-[9px] ${page === destination ? 'text-marvel' : 'text-muted hover:text-paper'}`}
-            >{label}{destination === 'battle' && <span className="ml-1 hidden text-[7px] text-muted md:inline">SOON</span>}</a>
+            >{label}</a>
           ))}
         </nav>
         <div className="order-2 flex items-center gap-2 sm:order-3 sm:gap-5">
@@ -1040,10 +1476,10 @@ function App() {
           <span className="font-mono text-[9px] font-bold tracking-[.1em] text-paper group-hover:text-marvel">BROWSE CHARACTERS →</span>
         </a>
         <a href="/battle" onClick={(event) => navigate(event, 'battle')} className="group border border-line bg-panel p-6 transition hover:border-marvel sm:p-8">
-          <p className="mb-3 font-mono text-[9px] font-bold tracking-[.12em] text-muted">ON THE ROADMAP</p>
+          <p className="mb-3 font-mono text-[9px] font-bold tracking-[.12em] text-marvel">PLAY NOW</p>
           <h2 className="mb-2 text-2xl font-bold tracking-[-.04em]">Battle mode</h2>
-          <p className="mb-5 max-w-md text-sm leading-relaxed text-muted">A future feature for comparing characters and their abilities, built one step at a time.</p>
-          <span className="font-mono text-[9px] font-bold tracking-[.1em] text-muted group-hover:text-paper">COMING SOON →</span>
+          <p className="mb-5 max-w-md text-sm leading-relaxed text-muted">Send two multiverse challengers into the arena. Watch the clash and see who claims victory.</p>
+          <span className="font-mono text-[9px] font-bold tracking-[.1em] text-paper group-hover:text-marvel">START A BATTLE →</span>
         </a>
       </section>
       <section className="border-t border-line py-10 sm:py-14" aria-labelledby="about-project-title">
@@ -1083,13 +1519,6 @@ function App() {
           </div>
           <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center sm:gap-4">
             <span className="font-mono text-[10px] tracking-[.1em] text-muted" aria-live="polite">{catalogMode === 'universe' ? visibleUniverseCharacters.length : characters.length} {catalogMode === 'universe' ? (universeSearchTerm ? 'RESULTS' : 'CHARACTERS') : (searchTerm ? 'RESULTS' : 'CHARACTERS')}</span>
-            {catalogMode === 'collection' && <button
-              className="min-h-10 bg-marvel px-3 font-mono text-[9px] font-bold tracking-[.1em] text-white transition hover:bg-[#e02d27] sm:px-4"
-              type="button"
-              onClick={() => openEditor()}
-            >
-              + ADD CHARACTER
-            </button>}
           </div>
         </div>
 
@@ -1149,7 +1578,7 @@ function App() {
                 key={character.id}
                 character={character}
                 onSelect={setSelectedCharacter}
-                onEdit={openEditor}
+                onPreviewImage={setImagePreviewCharacter}
               />
             ))}
           </div>
@@ -1162,7 +1591,7 @@ function App() {
         )}
         {!displayedLoading && !displayedError && catalogMode === 'universe' && visibleUniverseCharacters.length > 0 && (
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {paginatedCharacters.map((character) => <UniverseCard key={character.id} character={character} onSelect={setSelectedUniverseCharacter} onToggleFavorite={toggleFavorite} isFavorite={favoriteIds.has(Number(character.id))} favoriteBusy={favoriteBusyIds.has(Number(character.id))} />)}
+            {paginatedCharacters.map((character) => <UniverseCard key={character.id} character={character} onSelect={setSelectedUniverseCharacter} onPreviewImage={setImagePreviewCharacter} onToggleFavorite={toggleFavorite} onSendToBattle={sendCharacterToBattle} onRequestSignIn={() => { setAuthMode('signin'); setAuthOpen(true) }} signedIn={Boolean(user)} authLoading={authLoading} isFavorite={favoriteIds.has(Number(character.id))} favoriteBusy={favoriteBusyIds.has(Number(character.id))} />)}
           </div>
         )}
         {!displayedLoading && !displayedError && activeCharacters.length > 0 && (
@@ -1171,13 +1600,48 @@ function App() {
       </section>
       </>}
 
-      {page === 'battle' && <section className="mx-auto flex min-h-[55vh] max-w-3xl flex-col items-center justify-center py-16 text-center">
-        <span className="mb-6 grid size-20 place-items-center rounded-full border border-marvel/40 bg-panel text-3xl text-marvel" aria-hidden="true">⚔</span>
-        <p className="mb-3 font-mono text-[9px] font-bold tracking-[.16em] text-marvel">HERO ARCHIVE / ROADMAP</p>
-        <h1 className="mb-4 text-4xl font-extrabold tracking-[-.05em] sm:text-5xl">Battle mode is coming.</h1>
-        <p className="mb-8 max-w-xl text-sm leading-relaxed text-muted">This will be a deeper feature. For now, we’re focusing on building a strong character catalog and clear profiles first.</p>
-        <a href="/characters" onClick={(event) => navigate(event, 'characters')} className="bg-marvel px-5 py-3 font-mono text-[9px] font-bold tracking-[.1em] text-white transition hover:bg-[#e02d27]">EXPLORE CHARACTERS →</a>
+      {page === 'admin' && <section className="py-10 sm:py-12" aria-labelledby="admin-page-title">
+        <div className="mb-8 border-b border-line pb-7">
+          <p className="mb-2 font-mono text-[9px] font-bold tracking-[.12em] text-marvel">HERO ARCHIVE / ADMIN</p>
+          <h1 id="admin-page-title" className="text-3xl font-extrabold tracking-[-.04em] sm:text-4xl">Manage characters</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">Add, edit, or remove records in the curated Marvel collection. The full source catalog remains unchanged.</p>
+        </div>
+
+        {authLoading || adminLoading ? <p className="border border-line bg-panel p-5 text-sm text-muted">Checking administrator access...</p> : !user ? (
+          <div className="border border-line bg-panel p-5 sm:p-7">
+            <p className="mb-4 text-sm text-muted">Sign in with your app account to check whether it has administrator access.</p>
+            <button className="bg-marvel px-4 py-3 font-mono text-[9px] font-bold tracking-[.1em] text-white hover:bg-[#e02d27]" type="button" onClick={() => { setAuthMode('signin'); setAuthOpen(true) }}>SIGN IN</button>
+          </div>
+        ) : adminError ? (
+          <p className="border border-line bg-panel p-5 text-sm text-marvel" role="alert">{adminError}</p>
+        ) : !isAdmin ? (
+          <p className="border border-line bg-panel p-5 text-sm text-muted">This signed-in account does not have administrator access.</p>
+        ) : <>
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+            <p className="font-mono text-[10px] tracking-[.1em] text-muted">{characters.length} {searchTerm ? 'MATCHING RECORDS' : 'CURATED RECORDS'}</p>
+            <button className="min-h-10 bg-marvel px-4 font-mono text-[9px] font-bold tracking-[.1em] text-white transition hover:bg-[#e02d27]" type="button" onClick={() => openEditor()}>+ ADD CHARACTER</button>
+          </div>
+          <form className="mb-6 flex min-h-[52px] items-center gap-3 border border-line bg-panel px-4" onSubmit={(event) => { event.preventDefault(); setCurrentPage(1); setSearchTerm(searchInput.trim()) }}>
+            <label className="text-xl text-muted" htmlFor="admin-character-search" aria-hidden="true">⌕</label>
+            <input id="admin-character-search" className="min-w-0 flex-1 bg-transparent text-sm text-paper outline-none placeholder:text-muted" type="search" placeholder="Find a curated character by name..." value={searchInput} onChange={(event) => setSearchInput(event.target.value)} />
+            {searchInput && <button className="font-mono text-[9px] font-bold text-muted hover:text-paper" type="button" onClick={() => { setSearchInput(''); setSearchTerm(''); setCurrentPage(1) }}>CLEAR</button>}
+            <button className="bg-marvel px-3 py-2.5 font-mono text-[9px] font-bold text-white" type="submit">SEARCH</button>
+          </form>
+          {adminActionError && <p className="mb-4 border border-marvel/40 bg-marvel/10 p-3 text-sm text-marvel" role="alert">{adminActionError}</p>}
+          {loading && <p className="border border-dashed border-line p-8 text-center text-sm text-muted">Loading curated characters...</p>}
+          {!loading && error && <p className="border border-dashed border-line p-8 text-center text-sm text-marvel" role="alert">{error}</p>}
+          {!loading && !error && characters.length === 0 && <p className="border border-dashed border-line p-8 text-center text-sm text-muted">No characters match. Try a different search.</p>}
+          {!loading && !error && characters.length > 0 && <>
+            <div className="mb-4">{renderPagination('admin-characters-per-page-top')}</div>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {paginatedCharacters.map((character) => <CharacterCard key={character.id} character={character} onSelect={setSelectedCharacter} onPreviewImage={setImagePreviewCharacter} onEdit={openEditor} onDelete={deleteCharacter} adminMode deleting={deletingIds.has(Number(character.id))} />)}
+            </div>
+            <div className="mt-4">{renderPagination('admin-characters-per-page-bottom')}</div>
+          </>}
+        </>}
       </section>}
+
+      {page === 'battle' && <BattleMode characters={universeCharacters} loading={universeLoading} error={universeError} initialCharacterId={battleCharacterId} />}
 
       {page !== 'battle' && <footer className="flex flex-col justify-between gap-3 border-t border-line py-5 font-mono text-[8px] tracking-[.1em] text-muted sm:flex-row sm:py-6">
         <span>HERO ARCHIVE <span className="px-1.5 text-marvel">/</span> BUILT WITH CURIOSITY</span>
@@ -1190,6 +1654,7 @@ function App() {
       {selectedUniverseCharacter && (
         <UniverseDetail character={selectedUniverseCharacter} onClose={() => setSelectedUniverseCharacter(null)} />
       )}
+      {imagePreviewCharacter && <CharacterImageModal character={imagePreviewCharacter} onClose={() => setImagePreviewCharacter(null)} />}
       {editorOpen && (
         <CharacterEditor
           character={characterToEdit}
