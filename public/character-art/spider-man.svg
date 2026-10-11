@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 760" role="img" aria-labelledby="title description">
+  <title id="title">Spider-Man — original project artwork</title>
+  <desc id="description">A geometric character portrait created for the Hero Archive portfolio project.</desc>
+  <defs>
+    <radialGradient id="bg"><stop stop-color="#9e2535" stop-opacity=".55"/><stop offset="1" stop-color="#101214"/></radialGradient>
+    <linearGradient id="suit" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#173c70"/><stop offset="1" stop-color="#15171c"/></linearGradient>
+    <linearGradient id="face" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#e9bda7"/><stop offset="1" stop-color="#b37c69"/></linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="7" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect width="600" height="760" fill="#101214"/>
+  <rect width="600" height="650" fill="url(#bg)"/>
+  <path d="M0 505 600 220M-40 600 650 285" stroke="#ed514a" stroke-opacity=".1" stroke-width="2"/>
+  <circle cx="300" cy="300" r="220" fill="none" stroke="#ed514a" stroke-opacity=".22" stroke-width="2"/>
+  <circle cx="300" cy="300" r="193" fill="none" stroke="#ed514a" stroke-opacity=".14" stroke-width="1" stroke-dasharray="3 12"/>
+  <g fill="none" stroke="#f3d9cf" stroke-opacity=".35" stroke-width="2"><path d="M300 120V470M120 300h360M172 172l256 256M428 172 172 428M300 300 180 220m120 80 120-80m-120 80 80 120m-80-120-80 120"/><circle cx="300" cy="300" r="84"/></g>
+  <path d="M84 652c8-127 67-201 162-218l54 35 54-35c95 17 154 91 162 218H84Z" fill="url(#suit)" stroke="#ed514a" stroke-opacity=".72" stroke-width="4"/>
+  <path d="m246 435 54 47 54-47 29 30-47 187H264l-47-187 29-30Z" fill="#173c70" fill-opacity=".8"/>
+  <path d="M263 420h74v66h-74z" fill="url(#face)"/>
+  <path d="M211 279c0-90 39-139 89-139s89 49 89 139v83c0 72-42 119-89 119s-89-47-89-119v-83Z" fill="url(#face)" stroke="#ed514a" stroke-width="3"/>
+  <path d="M204 291c-6-115 35-177 102-177 71 0 102 66 91 177l-17-19-11-72c-42 29-87 37-145 27l-7 55-13 9Z" fill="#c73035" stroke="#ed514a" stroke-width="3"/>
+  <path d="M247 317h26m54 0h26" stroke="#151515" stroke-width="7" stroke-linecap="round"/>
+  <path d="M275 376q25 15 50 0" fill="none" stroke="#703c3c" stroke-width="5" stroke-linecap="round"/>
+  <path d="M300 488v163" stroke="#ed514a" stroke-opacity=".5" stroke-width="3"/>
+  <path d="M100 652h400" stroke="#ed514a" stroke-opacity=".6" stroke-width="2"/>
+</svg>
