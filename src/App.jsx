@@ -642,9 +642,20 @@ function CharacterImageModal({ character, onClose }) {
   const closeButton = useRef(null)
   const previouslyFocused = useRef(document.activeElement)
   const [imageFailed, setImageFailed] = useState(false)
-  const imageUrl = character.images?.lg || character.images?.md || character.imageUrl || localArtwork[character.id]
+  const marvelThumbnail = character.data?.thumbnail?.path && character.data?.thumbnail?.extension
+    ? `${character.data.thumbnail.path}.${character.data.thumbnail.extension}`
+    : ''
+  const imageUrl = character.images?.lg
+    || character.images?.md
+    || character.imageUrl
+    || character.image_url
+    || character.data?.image?.url
+    || marvelThumbnail
+    || localArtwork[character.id]
+    || ''
 
   useEffect(() => {
+    const previouslyFocusedElement = previouslyFocused.current
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     closeButton.current?.focus()
@@ -659,12 +670,11 @@ function CharacterImageModal({ character, onClose }) {
     return () => {
       document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', handleKeyDown)
-      previouslyFocused.current?.focus?.()
+      previouslyFocusedElement?.focus?.()
     }
   }, [onClose])
 
   useEffect(() => setImageFailed(false), [character.id, imageUrl])
-
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/90 p-3 backdrop-blur-sm sm:p-6" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
       <section className="character-image-modal relative flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden border border-white/15 bg-[#101010] shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="character-image-title">
@@ -1386,7 +1396,6 @@ function App() {
   }, {})
   const universeOptions = ['Marvel', 'DC', 'Dark Horse', 'Image Comics', 'Star Wars', 'Star Trek', 'Heroes', 'IDW', 'Icon Comics', 'Other', 'Unspecified']
     .filter((universe) => universeCounts[universe])
-  const displayedCount = catalogMode === 'universe' ? (universeFilter ? universeCounts[universeFilter] || 0 : universeCount) : characters.length
   const displayedLoading = catalogMode === 'universe' ? universeLoading : loading
   const displayedError = catalogMode === 'universe' ? universeError : error
   const activeCharacters = page === 'admin' ? characters : (catalogMode === 'universe' ? visibleUniverseCharacters : characters)
@@ -1445,7 +1454,7 @@ function App() {
       {page === 'home' && <>
       <section className="grid min-h-0 grid-cols-1 items-center gap-0 overflow-hidden border-b border-line md:min-h-[394px] md:grid-cols-[1fr_390px] md:gap-[50px]">
         <div className="py-12 md:py-[55px]">
-          <p className="mb-3.5 font-mono text-[10px] font-bold tracking-[.1em] text-marvel">A FULLSTACK DATABASE PROJECT</p>
+          <p className="mb-3.5 font-mono text-[10px] font-bold tracking-[.1em] text-marvel">A FULL-STACK MULTIVERSE EXPLORER</p>
           <h1 className="text-[clamp(38px,11vw,58px)] font-extrabold leading-[.98] tracking-[-.065em] sm:text-[clamp(52px,7vw,82px)]">
             Every hero has<br /><em className="font-serif font-normal tracking-[-.045em] text-marvel">a story.</em>
           </h1>
@@ -1455,7 +1464,7 @@ function App() {
           <div className="flex items-center gap-4 font-mono text-[9px] tracking-[.1em] text-muted">
             <span>COLLECTION<strong className="mt-1.5 block text-xs text-paper">{universeLoading ? '…' : universeCount.toLocaleString()}</strong></span>
             <span className="h-7 w-px bg-line" />
-            <span>POWERED BY<strong className="mt-1.5 block text-xs text-paper">YOUR API</strong></span>
+            <span>DATA SOURCE<strong className="mt-1.5 block text-xs text-paper">AKABAB CATALOG</strong></span>
           </div>
         </div>
         <div className="relative hidden h-[330px] place-items-center md:grid" aria-hidden="true">
@@ -1486,7 +1495,7 @@ function App() {
         <div className="grid gap-8 md:grid-cols-[1.1fr_.9fr] md:items-start md:gap-14">
           <div>
             <p className="mb-3 font-mono text-[9px] font-bold tracking-[.12em] text-marvel">ABOUT THE PROJECT</p>
-            <h2 id="about-project-title" className="mb-4 max-w-xl text-2xl font-bold tracking-[-.04em] sm:text-3xl">A character catalog built across the full stack.</h2>
+            <h2 id="about-project-title" className="mb-4 max-w-xl text-2xl font-bold tracking-[-.04em] sm:text-3xl">Search the multiverse, save favorites, and send heroes into battle.</h2>
             <p className="max-w-2xl text-sm leading-relaxed text-muted">Hero Archive brings character data from multiple universes into one searchable catalog. It’s a portfolio project built to demonstrate a React interface, an API, and a PostgreSQL database working together.</p>
           </div>
           <div>
