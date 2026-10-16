@@ -1,15 +1,18 @@
 # Hero Archive
 
-Hero Archive is a full-stack superhero catalog built as a developer portfolio project. Browse characters from multiple publishers, search by name or alias, and open detailed profiles. A curated Marvel collection and signed-in favorites are also available.
+Hero Archive is a full-stack multiverse character catalog built as a developer portfolio project. Browse characters from multiple publishers, search by name or alias, open detailed profiles, save favorites, and send a chosen character into Battle mode.
 
 ## Features
 
 - Search the full catalog by character name, real name, or alias.
 - Filter characters by universe or publisher.
-- Open character profiles with biography, appearance, work, connections, and power stats.
-- Browse a separate curated Marvel collection with add and edit forms.
+- Open character profiles with biography, appearance, work, connections, and color-coded power-stat bars.
+- Enlarge a character image in an accessible preview modal; use a local illustration when a record has no working image URL.
+- Search the full catalog and filter it by universe or publisher; explore a separately managed Marvel collection.
 - Create an account and save favorites with Supabase Auth.
-- Navigate between the Home, Characters, and Battle pages. Battle mode is planned.
+- Sign in to send a character from the catalog to Battle mode.
+- Play a cinematic one-on-one battle with a countdown, card clash, synthesized sound effects, a winner screen, and a result based on all six power stats.
+- Manage the curated Marvel collection through the administrator page.
 
 ## Tech stack
 
@@ -21,7 +24,7 @@ Hero Archive is a full-stack superhero catalog built as a developer portfolio pr
 
 ## Run locally
 
-The frontend depends on the API in the separate `marvel-backend` project. Start the backend first and follow its README to configure the database and import the full universe dataset.
+The frontend depends on the API in the separate `marvel-backend` project. Start the backend first and follow its README to configure the database, import the full universe dataset, and grant administrator access if needed.
 
 1. In PowerShell, go to `C:\Projects\marvel-frontend`.
 2. Copy the example environment file:
@@ -50,4 +53,4 @@ The Supabase publishable key is intended for browser use. Never put a database p
 
 ## Data source
 
-The full catalog is imported from the [Akabab Superhero API](https://github.com/akabab/superhero-api). Character records and image URLs are displayed with source attribution. Superhero characters and their artwork belong to their respective rights holders; this fan-made portfolio project is not affiliated with them.
+The full catalog is imported from the [Akabab Superhero API](https://github.com/akabab/superhero-api). Character records and image URLs are displayed with source attribution. Superhero characters and their artwork belong to their respective rights holders; this fan-made portfolio project is not affiliated with them. Confirm image and data permissions before public or commercial use.
