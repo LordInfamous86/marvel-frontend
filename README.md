@@ -2,13 +2,35 @@
 
 Hero Archive is a full-stack multiverse character catalog built as a developer portfolio project. Browse characters from multiple publishers, search by name or alias, open detailed profiles, save favorites, and send a chosen character into Battle mode.
 
+## Screenshots
+
+### Homepage
+
+![Hero Archive homepage](screenshots/homepage.png)
+
+### Character catalog
+
+![Marvel character catalog with search, filters, and pagination](screenshots/character-catalog.png)
+
+### Live character search
+
+![Search results for Deadpool](screenshots/deadpool-search.png)
+
+### Character image preview
+
+![Enlarged Deadpool image preview](screenshots/character-image-preview.png)
+
+### Battle mode
+
+![Battle mode victory screen](screenshots/battle-result.png)
+
 ## Features
 
 - Search the full catalog by character name, real name, or alias.
 - Filter characters by universe or publisher.
 - Open character profiles with biography, appearance, work, connections, and color-coded power-stat bars.
 - Enlarge a character image in an accessible preview modal; use a local illustration when a record has no working image URL.
-- Search the full catalog and filter it by universe or publisher; explore a separately managed Marvel collection.
+- Explore the source catalog separately from the curated Marvel collection.
 - Create an account and save favorites with Supabase Auth.
 - Sign in to send a character from the catalog to Battle mode.
 - Play a cinematic one-on-one battle with a countdown, card clash, synthesized sound effects, a winner screen, and a result based on all six power stats.
@@ -21,6 +43,25 @@ Hero Archive is a full-stack multiverse character catalog built as a developer p
 - Node.js and Express for the API
 - Supabase Postgres for character data and favorites
 - Supabase Auth for user accounts
+
+## Architecture
+
+The browser uses the Express API for character data and administrator actions. Supabase Auth manages sign-in, while the browser accesses each user's favorites under the database's row-level security policies.
+
+```mermaid
+flowchart LR
+    Browser["Browser<br/>React + Vite + Tailwind"]
+    API["Express REST API<br/>Character data + admin actions"]
+    Auth["Supabase Auth<br/>Email + password sessions"]
+    DB[("Supabase Postgres<br/>Characters, powers, teams, favorites")]
+
+    Browser -->|HTTPS requests| API
+    API -->|SQL over TLS| DB
+    Browser -->|Sign in and sign up| Auth
+    Auth -->|Session and access token| Browser
+    Browser -->|Favorite reads and writes, protected by RLS| DB
+    Browser -->|Admin request with access token| API
+```
 
 ## Run locally
 
