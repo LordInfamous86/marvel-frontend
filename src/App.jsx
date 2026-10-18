@@ -1470,8 +1470,10 @@ function App() {
         <div className="relative hidden h-[330px] place-items-center md:grid" aria-hidden="true">
           <div className="absolute h-[125px] w-[310px] rotate-[-29deg] rounded-[50%] border border-white/5" />
           <div className="absolute h-[172px] w-[366px] rotate-[31deg] rounded-[50%] border border-white/5" />
-          <div className="relative grid size-[215px] place-items-center rounded-full border border-marvel/40 bg-[radial-gradient(circle_at_50%_42%,#3b1c1b_0,#1b1717_49%,#141414_73%)] shadow-[0_0_90px_#d3272024,inset_0_0_45px_#e43a2e19]">
-            <span className="text-[122px] font-black italic text-marvel drop-shadow-[0_0_25px_#f03e3470]">M</span>
+          <div className="relative grid size-[245px] place-items-center rounded-full border border-marvel/40 bg-[radial-gradient(circle_at_50%_42%,#3b1c1b_0,#1b1717_49%,#141414_73%)] shadow-[0_0_90px_#d3272024,inset_0_0_45px_#e43a2e19]">
+            <div className="absolute inset-[5px] overflow-hidden rounded-full">
+              <img src="/wolverine-homepage.png" alt="" className="h-full w-full object-contain object-center" />
+            </div>
           </div>
           <span className="absolute right-0 bottom-[18px] text-right font-mono text-[9px] leading-5 tracking-[.19em] text-muted">CHARACTER<br />DATABASE</span>
           <span className="absolute right-[60px] top-12 text-marvel">✦</span>
