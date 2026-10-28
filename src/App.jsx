@@ -848,6 +848,117 @@ function playFightSound(existingContext) {
   impact.stop(now + 0.8)
 }
 
+function BattleCharacterPicker({ characters, selectedId, unavailableId, side, disabled, onSelect }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [activeIndex, setActiveIndex] = useState(-1)
+  const selectedCharacter = characters.find((character) => String(character.id) === selectedId)
+  const normalizedQuery = query.trim().toLocaleLowerCase()
+  const matches = characters
+    .filter((character) => String(character.id) !== unavailableId)
+    .filter((character) => {
+      if (!normalizedQuery) return true
+      const biography = character.biography || {}
+      const aliases = Array.isArray(biography.aliases) ? biography.aliases : [biography.aliases].filter(Boolean)
+      const searchValues = [character.name, biography.fullName, biography.publisher, ...aliases]
+      return searchValues.some((value) => String(value || '').toLocaleLowerCase().includes(normalizedQuery))
+    })
+    .sort((first, second) => String(first.name).localeCompare(String(second.name)))
+  const visibleMatches = matches.slice(0, 8)
+  const listboxId = `battle-${side}-character-options`
+
+  useEffect(() => {
+    if (!isOpen) setQuery('')
+  }, [isOpen])
+
+  function selectCharacter(character) {
+    onSelect(String(character.id))
+    setQuery('')
+    setIsOpen(false)
+    setActiveIndex(-1)
+  }
+
+  function handleKeyDown(event) {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      setIsOpen(true)
+      setActiveIndex((current) => Math.min(current + 1, visibleMatches.length - 1))
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setIsOpen(true)
+      setActiveIndex((current) => current <= 0 ? visibleMatches.length - 1 : current - 1)
+    } else if (event.key === 'Enter' && isOpen) {
+      const match = visibleMatches[activeIndex] || (visibleMatches.length === 1 ? visibleMatches[0] : null)
+      if (match) {
+        event.preventDefault()
+        selectCharacter(match)
+      }
+    } else if (event.key === 'Escape' && isOpen) {
+      event.preventDefault()
+      setIsOpen(false)
+      setActiveIndex(-1)
+    }
+  }
+
+  return (
+    <div className="relative grid gap-2 border border-line bg-panel p-3 font-mono text-[8px] font-bold tracking-[.12em] text-muted">
+      <label htmlFor={`battle-${side}-search`}>{side === 'left' ? 'PLAYER ONE' : 'PLAYER TWO'}</label>
+      <div className="relative">
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted" aria-hidden="true">⌕</span>
+        <input
+          id={`battle-${side}-search`}
+          role="combobox"
+          aria-autocomplete="list"
+          aria-haspopup="listbox"
+          aria-expanded={isOpen && !disabled}
+          aria-controls={listboxId}
+          aria-activedescendant={isOpen && activeIndex >= 0 ? `${listboxId}-${visibleMatches[activeIndex]?.id}` : undefined}
+          autoComplete="off"
+          className="min-h-10 w-full border border-line bg-ink py-2 pl-9 pr-3 font-sans text-xs font-normal tracking-normal text-paper outline-none placeholder:text-muted focus:border-marvel disabled:opacity-50"
+          value={isOpen ? query : selectedCharacter ? `${selectedCharacter.name} · ${getUniverseName(selectedCharacter.biography?.publisher, selectedCharacter)}` : ''}
+          placeholder="Search by name, alias, or universe…"
+          disabled={disabled}
+          onFocus={() => {
+            setQuery('')
+            setActiveIndex(-1)
+            setIsOpen(true)
+          }}
+          onBlur={() => setIsOpen(false)}
+          onChange={(event) => {
+            setQuery(event.target.value)
+            setActiveIndex(-1)
+            setIsOpen(true)
+          }}
+          onKeyDown={handleKeyDown}
+        />
+      </div>
+      <span className="sr-only" aria-live="polite">{selectedCharacter ? `${selectedCharacter.name} selected` : 'No character selected'}</span>
+      {isOpen && !disabled && <div className="absolute inset-x-3 top-[calc(100%-0.25rem)] z-30 overflow-hidden border border-line bg-[#171615] shadow-2xl">
+        <div id={listboxId} role="listbox" aria-label={`${side === 'left' ? 'Player one' : 'Player two'} characters`} className="max-h-72 overflow-y-auto">
+          {visibleMatches.length ? visibleMatches.map((character, index) => {
+            const image = character.images?.sm || character.images?.md || character.imageUrl || localArtwork[character.id]
+            return <button
+              key={character.id}
+              id={`${listboxId}-${character.id}`}
+              type="button"
+              role="option"
+              aria-selected={String(character.id) === selectedId}
+              className={`flex min-h-14 w-full items-center gap-3 border-b border-line px-3 py-2 text-left font-sans text-xs font-normal tracking-normal text-paper transition last:border-b-0 hover:bg-[#24211f] focus-visible:bg-[#24211f] ${activeIndex === index ? 'bg-[#24211f]' : ''}`}
+              onMouseDown={(event) => event.preventDefault()}
+              onMouseEnter={() => setActiveIndex(index)}
+              onClick={() => selectCharacter(character)}
+            >
+              {image ? <img className="h-10 w-8 shrink-0 bg-[#25211f] object-cover object-top" src={image} alt="" onError={(event) => { event.currentTarget.style.visibility = 'hidden' }} /> : <span className="grid h-10 w-8 shrink-0 place-items-center bg-[#25211f] font-bold text-marvel">{character.name?.[0] || '?'}</span>}
+              <span className="min-w-0"><strong className="block truncate">{character.name}</strong><span className="mt-1 block truncate text-[10px] text-muted">{getUniverseName(character.biography?.publisher, character)}{character.biography?.fullName ? ` · ${character.biography.fullName}` : ''}</span></span>
+            </button>
+          }) : <p className="px-3 py-4 font-sans text-xs font-normal tracking-normal text-muted">No characters match “{query}”. Try another name or alias.</p>}
+        </div>
+        {matches.length > visibleMatches.length && <p className="border-t border-line px-3 py-2 font-sans text-[10px] font-normal tracking-normal text-muted">Showing 8 of {matches.length} matches. Keep typing to narrow the list.</p>}
+      </div>}
+    </div>
+  )
+}
+
 function BattleMode({ characters, loading, error, initialCharacterId }) {
   const [leftId, setLeftId] = useState(() => initialCharacterId ? String(initialCharacterId) : '')
   const [rightId, setRightId] = useState('')
@@ -1039,12 +1150,8 @@ function BattleMode({ characters, loading, error, initialCharacterId }) {
       </div>
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2">
-        {[['Player one', leftId, rightId, 'left'], ['Player two', rightId, leftId, 'right']].map(([label, value, otherValue, side]) => <label key={label} className="grid gap-2 border border-line bg-panel p-3 font-mono text-[8px] font-bold tracking-[.12em] text-muted">{label.toUpperCase()}
-          <select className="min-h-10 w-full border border-line bg-ink px-2 font-sans text-xs font-normal tracking-normal text-paper outline-none focus:border-marvel disabled:opacity-50" value={value} disabled={battlePhase === 'clash' || battlePhase === 'countdown'} onChange={(event) => handleFighterChange(side, event.target.value)} aria-label={`Choose ${label}`}>
-            <option value="">Choose a character…</option>
-            {characters.map((option) => <option key={option.id} value={option.id} disabled={String(option.id) === otherValue}>{option.name} · {getUniverseName(option.biography?.publisher, option)}</option>)}
-          </select>
-        </label>)}
+        <BattleCharacterPicker characters={characters} selectedId={leftId} unavailableId={rightId} side="left" disabled={battlePhase === 'clash' || battlePhase === 'countdown'} onSelect={(nextId) => handleFighterChange('left', nextId)} />
+        <BattleCharacterPicker characters={characters} selectedId={rightId} unavailableId={leftId} side="right" disabled={battlePhase === 'clash' || battlePhase === 'countdown'} onSelect={(nextId) => handleFighterChange('right', nextId)} />
       </div>
 
       <div className="battle-arena" data-phase={battlePhase}>
