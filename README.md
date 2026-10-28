@@ -65,26 +65,32 @@ flowchart LR
 
 ## Run locally
 
-The frontend depends on the API in the separate `marvel-backend` project. Start the backend first and follow its README to configure the database, import the full universe dataset, and grant administrator access if needed.
+The frontend depends on the API in the separate [marvel-backend repository](https://github.com/LordInfamous86/marvel-backend). Start the backend first and follow its README to configure the database, import the full universe dataset, and grant administrator access if needed.
 
-1. In PowerShell, go to `C:\Projects\marvel-frontend`.
+1. Clone this repository and enter the project directory:
+
+   ```sh
+   git clone https://github.com/LordInfamous86/marvel-frontend.git
+   cd marvel-frontend
+   ```
+
 2. Copy the example environment file:
 
-   ```powershell
-   Copy-Item .env.example .env.local
+   ```sh
+   cp .env.example .env.local
    ```
 
 3. In `.env.local`, add the Supabase Project URL and publishable key from **Project Settings → API Keys**. `VITE_API_URL` should point to the backend, usually `http://localhost:5000`.
 4. Install dependencies and start the frontend:
 
-   ```powershell
-   npm.cmd install
-   npm.cmd run dev
+   ```sh
+   npm install
+   npm run dev
    ```
 
 5. Open the local address Vite prints, usually `http://localhost:5173`.
 
-In PowerShell, use `npm.cmd` if the script execution policy prevents `npm` from running. Vite reads environment variables when it starts, so restart the frontend after changing `.env.local`.
+Vite reads environment variables when it starts, so restart the frontend after changing `.env.local`.
 
 ## Accounts and favorites
 
